@@ -1,0 +1,97 @@
+{
+  "name": "Competitor Monitor Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [{ "triggerAtHour": 7 }] }
+      },
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "position": [240, 300],
+      "id": "e5f6a7b8-0005-0005-0005-000000000001",
+      "typeVersion": 1.2
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": { "__rl": true, "mode": "id", "value": "YOUR_GOOGLE_SHEET_ID" },
+        "sheetName": { "__rl": true, "value": "gid=0", "mode": "list", "cachedResultName": "Competitors" },
+        "options": {}
+      },
+      "name": "Get Competitor URLs",
+      "type": "n8n-nodes-base.googleSheets",
+      "position": [480, 300],
+      "id": "e5f6a7b8-0005-0005-0005-000000000002",
+      "typeVersion": 4.7,
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "YOUR_GOOGLE_CREDENTIAL_ID", "name": "Google Sheets OAuth2 API" }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.URL }}",
+        "options": { "response": { "response": { "responseFormat": "text" } } }
+      },
+      "name": "Scrape Website",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [720, 300],
+      "id": "e5f6a7b8-0005-0005-0005-000000000003",
+      "typeVersion": 4.4
+    },
+    {
+      "parameters": {
+        "jsCode": "const current = $input.all()[0].json.data || '';\nconst url = $('Get Competitor URLs').first().json.URL;\nconst name = $('Get Competitor URLs').first().json.Name;\n\n// Simple hash to detect changes\nconst hash = current.length + '_' + current.substring(0, 200).replace(/\\s/g, '');\n\nreturn [{\n  json: {\n    name,\n    url,\n    content_preview: current.substring(0, 1500).replace(/<[^>]*>/g, '').trim(),\n    hash,\n    scraped_at: new Date().toISOString()\n  }\n}];"
+      },
+      "name": "Extract Content",
+      "type": "n8n-nodes-base.code",
+      "position": [960, 300],
+      "id": "e5f6a7b8-0005-0005-0005-000000000004",
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Authorization", "value": "=Bearer YOUR_GROQ_API_KEY" }]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "=application/json",
+        "body": "={\n  \"model\": \"llama-3.3-70b-versatile\",\n  \"messages\": [\n    {\"role\": \"system\", \"content\": \"You are a competitive intelligence analyst. Analyze this competitor website content and extract: key offerings, pricing signals, positioning, recent changes or promotions. Be concise, max 200 words. Focus on actionable insights.\"},\n    {\"role\": \"user\", \"content\": \"Competitor: {{ $json.name }}\\nURL: {{ $json.url }}\\n\\nContent:\\n{{ $json.content_preview }}\"}\n  ]\n}",
+        "options": {}
+      },
+      "name": "Groq AI Analysis",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1200, 300],
+      "id": "e5f6a7b8-0005-0005-0005-000000000005",
+      "typeVersion": 4.4
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "text": "=🔍 Competitor Intel — {{ $('Extract Content').first().json.name }}\n📅 {{ new Date().toLocaleDateString('pl') }}\n\n{{ $json.choices[0].message.content }}\n\n🔗 {{ $('Extract Content').first().json.url }}",
+        "additionalFields": {}
+      },
+      "name": "Send Intel Report",
+      "type": "n8n-nodes-base.telegram",
+      "position": [1440, 300],
+      "id": "e5f6a7b8-0005-0005-0005-000000000006",
+      "typeVersion": 1.2,
+      "credentials": {
+        "telegramApi": { "id": "YOUR_TELEGRAM_CREDENTIAL_ID", "name": "Telegram account" }
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": { "main": [[{ "node": "Get Competitor URLs", "type": "main", "index": 0 }]] },
+    "Get Competitor URLs": { "main": [[{ "node": "Scrape Website", "type": "main", "index": 0 }]] },
+    "Scrape Website": { "main": [[{ "node": "Extract Content", "type": "main", "index": 0 }]] },
+    "Extract Content": { "main": [[{ "node": "Groq AI Analysis", "type": "main", "index": 0 }]] },
+    "Groq AI Analysis": { "main": [[{ "node": "Send Intel Report", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "tags": []
+}
